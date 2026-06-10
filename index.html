@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>축의금 수금 입력</title>
+  <style>
+    :root {
+      --bg: #eef1f4;
+      --panel: #ffffff;
+      --ink: #1d2329;
+      --muted: #66717d;
+      --line: #d6dde4;
+      --field: #f8fafc;
+      --primary: #176b87;
+      --primary-strong: #0f5268;
+      --accent: #b86b23;
+      --ok: #166534;
+      --shadow: 0 18px 50px rgba(29, 35, 41, 0.12);
+      font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0)),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    .topbar {
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(26px, 3.2vw, 42px);
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.95fr) minmax(300px, 0.85fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .grid > * {
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .panel h2 {
+      margin: 0 0 18px;
+      font-size: 21px;
+      line-height: 1.2;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 15px;
+    }
+
+    .field.inline-field {
+      grid-template-columns: 92px minmax(0, 180px);
+      align-items: center;
+      column-gap: 12px;
+    }
+
+    .field.inline-field input {
+      height: 42px;
+    }
+
+    label {
+      font-weight: 800;
+      color: #2d3741;
+    }
+
+    input {
+      width: 100%;
+      height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--field);
+      padding: 0 12px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.16);
+      background: #fff;
+    }
+
+    .amount-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .custom-amount-field {
+      display: none;
+      margin-top: 10px;
+      margin-bottom: 0;
+    }
+
+    .custom-amount-field.show {
+      display: grid;
+    }
+
+    .amount-button,
+    .ticket-button,
+    .save-button {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, color 120ms ease;
+    }
+
+    .amount-button:hover,
+    .ticket-button:hover {
+      transform: translateY(-1px);
+      border-color: var(--primary);
+    }
+
+    .amount-button.selected {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .save-button {
+      width: 100%;
+      height: 50px;
+      margin-top: 4px;
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+      font-size: 17px;
+    }
+
+    .save-button:hover {
+      background: var(--primary-strong);
+    }
+
+    .save-button:disabled {
+      cursor: wait;
+      opacity: 0.68;
+      transform: none;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 13px;
+      margin-bottom: 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #edf1f5;
+      font-weight: 800;
+    }
+
+    .summary-row span:first-child {
+      color: var(--muted);
+      font-weight: 750;
+    }
+
+    .summary-row strong {
+      font-size: 21px;
+      text-align: right;
+    }
+
+    .ticket-actions {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 8px 0 13px;
+    }
+
+    .ticket-button {
+      background: #fbf7f2;
+      border-color: #ead8c5;
+      color: #7a4218;
+    }
+
+    .total-ticket {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #eef8f4;
+      color: var(--ok);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 900;
+    }
+
+    .list-panel {
+      grid-column: 1 / -1;
+    }
+
+    .list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .search {
+      max-width: 360px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+      background: #fff;
+    }
+
+    th,
+    td {
+      padding: 13px 12px;
+      text-align: left;
+      border-bottom: 1px solid #edf1f5;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #f3f6f8;
+      color: #43505c;
+      font-size: 14px;
+    }
+
+    td.amount-cell {
+      font-weight: 900;
+      color: var(--primary-strong);
+    }
+
+    .empty {
+      padding: 30px 16px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      min-width: 220px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: #192229;
+      color: #fff;
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      font-weight: 800;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 820px) {
+      .app {
+        width: min(100% - 20px, 680px);
+        padding-top: 18px;
+      }
+
+      .list-head {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      .amount-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .search {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <h1>축의금 수금</h1>
+    </div>
+
+    <section class="grid">
+      <form class="panel" id="entryForm">
+        <h2>축의금 수금 입력</h2>
+
+        <div class="field inline-field">
+          <label for="envelope">봉투번호</label>
+          <input id="envelope" name="envelope" inputmode="numeric" autocomplete="off" placeholder="001" required>
+        </div>
+
+        <div class="field inline-field">
+          <label for="guestName">성명</label>
+          <input id="guestName" name="guestName" autocomplete="off" placeholder="김OO" required>
+        </div>
+
+        <div class="field">
+          <label>금액</label>
+          <div class="amount-grid" id="amountButtons">
+            <button class="amount-button" type="button" data-amount="30000">3만</button>
+            <button class="amount-button selected" type="button" data-amount="50000">5만</button>
+            <button class="amount-button" type="button" data-amount="70000">7만</button>
+            <button class="amount-button" type="button" data-amount="100000">10만</button>
+            <button class="amount-button" type="button" data-amount="150000">15만</button>
+            <button class="amount-button" type="button" data-amount="200000">20만</button>
+            <button class="amount-button" type="button" data-amount="300000">30만</button>
+            <button class="amount-button" type="button" data-custom="true">직접입력</button>
+          </div>
+          <div class="field custom-amount-field" id="customAmountField">
+            <label for="customAmount">직접입력 금액</label>
+            <input id="customAmount" name="customAmount" inputmode="numeric" autocomplete="off" placeholder="예: 50000">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="mealTickets">식권수</label>
+          <input id="mealTickets" name="mealTickets" inputmode="numeric" autocomplete="off" placeholder="예: 2">
+        </div>
+
+        <div class="field">
+          <label for="note">비고</label>
+          <input id="note" name="note" autocomplete="off" placeholder="메모">
+        </div>
+
+        <button class="save-button" type="submit">저장하기</button>
+      </form>
+
+      <section class="panel">
+        <h2>요약</h2>
+        <div class="summary-list">
+          <div class="summary-row">
+            <span>총 접수 건수</span>
+            <strong id="totalCount">0건</strong>
+          </div>
+          <div class="summary-row">
+            <span>총 수금액</span>
+            <strong id="totalAmount">₩0</strong>
+          </div>
+          <div class="summary-row">
+            <span>명부 기준 식권수</span>
+            <strong id="baseTickets">0장</strong>
+          </div>
+        </div>
+
+        <label>추가 불출 식권수</label>
+        <div class="ticket-actions">
+          <button class="ticket-button" type="button" data-ticket="-1">-1</button>
+          <button class="ticket-button" type="button" data-ticket="1">+1</button>
+          <button class="ticket-button" type="button" data-ticket="2">+2</button>
+          <button class="ticket-button" type="button" data-ticket="5">+5</button>
+        </div>
+
+        <div class="summary-row">
+          <span>현재 추가 불출</span>
+          <strong id="extraTickets">0장</strong>
+        </div>
+
+        <div class="total-ticket">
+          <span>전체 불출 식권수</span>
+          <strong id="totalTickets">0장</strong>
+        </div>
+      </section>
+
+      <section class="panel list-panel">
+        <div class="list-head">
+          <h2>전체 리스트</h2>
+          <input class="search" id="search" autocomplete="off" placeholder="봉투번호 / 이름 검색">
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>봉투번호</th>
+                <th>성명</th>
+                <th>금액</th>
+                <th>식권수</th>
+                <th>비고</th>
+              </tr>
+            </thead>
+            <tbody id="entryList"></tbody>
+          </table>
+          <div class="empty" id="emptyState">아직 저장된 접수 내역이 없습니다.</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast">저장되었습니다.</div>
+
+  <script>
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxx97sTF-hI8GaO9WTR_rzttTVzRHHgki3oQ6xgZPqg6QQxzvVKZBpYJ_W2Bz941-Ys/exec";
+    const entries = [];
+    let selectedAmount = 50000;
+    let extraTickets = 0;
+
+    const formatter = new Intl.NumberFormat("ko-KR", {
+      style: "currency",
+      currency: "KRW",
+      maximumFractionDigits: 0
+    });
+
+    const numberOnly = (value) => Number(String(value).replace(/[^0-9]/g, "")) || 0;
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 1400);
+    }
+
+    function render() {
+      const query = document.getElementById("search").value.trim().toLowerCase();
+      const list = document.getElementById("entryList");
+      const filtered = entries.filter((entry) => {
+        return entry.envelope.toLowerCase().includes(query) || entry.name.toLowerCase().includes(query);
+      });
+
+      list.innerHTML = filtered.map((entry) => `
+        <tr>
+          <td>${entry.envelope}</td>
+          <td>${entry.name}</td>
+          <td class="amount-cell">${formatter.format(entry.amount)}</td>
+          <td>${entry.tickets}</td>
+          <td>${entry.note || ""}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("emptyState").style.display = filtered.length ? "none" : "block";
+
+      const totalAmount = entries.reduce((sum, entry) => sum + entry.amount, 0);
+      const baseTickets = entries.reduce((sum, entry) => sum + entry.tickets, 0);
+
+      document.getElementById("totalCount").textContent = `${entries.length}건`;
+      document.getElementById("totalAmount").textContent = formatter.format(totalAmount);
+      document.getElementById("baseTickets").textContent = `${baseTickets}장`;
+      document.getElementById("extraTickets").textContent = `${extraTickets}장`;
+      document.getElementById("totalTickets").textContent = `${baseTickets + extraTickets}장`;
+    }
+
+    function resetForm() {
+      document.getElementById("entryForm").reset();
+      document.getElementById("customAmountField").classList.remove("show");
+      selectedAmount = 50000;
+
+      document.querySelectorAll(".amount-button").forEach((button) => {
+        button.classList.toggle("selected", Number(button.dataset.amount) === selectedAmount);
+      });
+
+      document.getElementById("guestName").focus();
+    }
+
+    async function saveEntryToSheet(entry) {
+      if (!GOOGLE_SCRIPT_URL) {
+        return false;
+      }
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(entry)
+      });
+
+      return true;
+    }
+
+    document.getElementById("amountButtons").addEventListener("click", (event) => {
+      const button = event.target.closest(".amount-button");
+      if (!button) return;
+
+      const customAmountField = document.getElementById("customAmountField");
+      const customAmountInput = document.getElementById("customAmount");
+      const isCustom = button.dataset.custom === "true";
+      selectedAmount = isCustom ? 0 : Number(button.dataset.amount);
+
+      if (isCustom) {
+        customAmountField.classList.add("show");
+        customAmountInput.focus();
+      } else {
+        customAmountField.classList.remove("show");
+        customAmountInput.value = "";
+      }
+
+      document.querySelectorAll(".amount-button").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+
+    document.getElementById("customAmount").addEventListener("input", () => {
+      selectedAmount = 0;
+    });
+
+    document.getElementById("entryForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const envelopeInput = document.getElementById("envelope");
+      const nameInput = document.getElementById("guestName");
+      const saveButton = document.querySelector(".save-button");
+      const customAmount = numberOnly(document.getElementById("customAmount").value);
+      const amount = customAmount || selectedAmount;
+
+      if (!amount) {
+        showToast("금액을 입력해 주세요.");
+        return;
+      }
+
+      const entry = {
+        envelope: envelopeInput.value.trim(),
+        name: nameInput.value.trim(),
+        amount,
+        tickets: numberOnly(document.getElementById("mealTickets").value),
+        note: document.getElementById("note").value.trim()
+      };
+
+      saveButton.disabled = true;
+      saveButton.textContent = "저장 중";
+
+      try {
+        const synced = await saveEntryToSheet(entry);
+        entries.push(entry);
+        render();
+        resetForm();
+        showToast(synced ? "시트에 저장되었습니다." : "저장되었습니다.");
+      } catch (error) {
+        showToast("시트 저장에 실패했습니다.");
+      } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = "저장하기";
+      }
+    });
+
+    document.getElementById("search").addEventListener("input", render);
+
+    document.querySelectorAll(".ticket-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        extraTickets = Math.max(0, extraTickets + Number(button.dataset.ticket));
+        render();
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>
