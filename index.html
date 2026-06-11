@@ -4,11 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>축의금 수금 입력</title>
-  <link rel="apple-touch-icon" sizes="192x192" href="icons/wedding_icon_192.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/wedding_icon_192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="icons/wedding_icon_512.png">
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#eef1f4">
   <style>
     :root {
       --bg: #eef1f4;
@@ -260,7 +255,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 720px;
+      min-width: 780px;
       background: #fff;
     }
 
@@ -281,6 +276,22 @@
     td.amount-cell {
       font-weight: 900;
       color: var(--primary-strong);
+    }
+
+    .delete-button {
+      min-height: 32px;
+      border: 1px solid #f0c4c4;
+      border-radius: 6px;
+      background: #fff5f5;
+      color: #a32121;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 0 10px;
+    }
+
+    .delete-button:hover {
+      border-color: #d94848;
+      background: #ffe8e8;
     }
 
     .empty {
@@ -441,6 +452,7 @@
                 <th>금액</th>
                 <th>식권수</th>
                 <th>비고</th>
+                <th>삭제</th>
               </tr>
             </thead>
             <tbody id="entryList"></tbody>
@@ -454,7 +466,7 @@
   <div class="toast" id="toast">저장되었습니다.</div>
 
   <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxsf2jRh2hfjDQ3jKwUPnQr7xUU032ZD-axnVJpmq3BCQJNA_gx4tZ6avBN621yOdGn/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxTRYJNU-dccOU80uMdHUJZeVcQmQKKAFUTJY_-8GzWIVJEGpR7jpAnQ_9X_bf96C27/exec";
     const entries = [];
     let selectedAmount = 50000;
     let extraTickets = 0;
@@ -485,9 +497,11 @@
     function render() {
       const query = document.getElementById("search").value.trim().toLowerCase();
       const list = document.getElementById("entryList");
-      const filtered = entries.filter((entry) => {
-        return textValue(entry.envelope).toLowerCase().includes(query) || textValue(entry.name).toLowerCase().includes(query);
-      });
+      const filtered = entries
+        .map((entry, index) => ({ ...entry, index }))
+        .filter((entry) => {
+          return textValue(entry.envelope).toLowerCase().includes(query) || textValue(entry.name).toLowerCase().includes(query);
+        });
 
       list.innerHTML = filtered.map((entry) => `
         <tr>
@@ -496,6 +510,7 @@
           <td class="amount-cell">${formatter.format(entry.amount)}</td>
           <td>${entry.tickets}</td>
           <td>${escapeHtml(entry.note)}</td>
+          <td><button class="delete-button" type="button" data-entry-index="${entry.index}">삭제</button></td>
         </tr>
       `).join("");
 
@@ -517,7 +532,8 @@
         name: textValue(entry.name),
         amount: numberOnly(entry.amount),
         tickets: numberOnly(entry.tickets),
-        note: textValue(entry.note)
+        note: textValue(entry.note),
+        rowNumber: numberOnly(entry.rowNumber)
       };
     }
 
@@ -550,6 +566,26 @@
           "Content-Type": "text/plain;charset=utf-8"
         },
         body: JSON.stringify(entry)
+      });
+
+      return true;
+    }
+
+    async function deleteEntryFromSheet(entry) {
+      if (!GOOGLE_SCRIPT_URL || !entry.rowNumber) {
+        return false;
+      }
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify({
+          action: "delete",
+          rowNumber: entry.rowNumber
+        })
       });
 
       return true;
@@ -640,8 +676,12 @@
 
       try {
         const synced = await saveEntryToSheet(entry);
-        entries.push(entry);
-        render();
+        if (synced) {
+          await loadEntriesFromSheet();
+        } else {
+          entries.push(entry);
+          render();
+        }
         resetForm();
         showToast(synced ? "시트에 저장되었습니다." : "저장되었습니다.");
       } catch (error) {
@@ -653,6 +693,39 @@
     });
 
     document.getElementById("search").addEventListener("input", render);
+
+    document.getElementById("entryList").addEventListener("click", async (event) => {
+      const button = event.target.closest(".delete-button");
+      if (!button) return;
+
+      const entry = entries[Number(button.dataset.entryIndex)];
+      if (!entry) return;
+
+      if (!entry.rowNumber) {
+        showToast("시트 동기화 후 삭제할 수 있습니다.");
+        return;
+      }
+
+      const confirmed = window.confirm(`${entry.envelope} / ${entry.name} 내역을 삭제할까요?`);
+      if (!confirmed) return;
+
+      button.disabled = true;
+      button.textContent = "삭제 중";
+
+      try {
+        await deleteEntryFromSheet(entry);
+        const index = entries.findIndex((item) => item.rowNumber === entry.rowNumber);
+        if (index >= 0) {
+          entries.splice(index, 1);
+        }
+        render();
+        showToast("삭제되었습니다.");
+      } catch (error) {
+        showToast("삭제에 실패했습니다.");
+        button.disabled = false;
+        button.textContent = "삭제";
+      }
+    });
 
     document.querySelectorAll(".ticket-button").forEach((button) => {
       button.addEventListener("click", () => {
