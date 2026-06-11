@@ -80,6 +80,21 @@
       line-height: 1.2;
     }
 
+    .sync-status {
+      display: none;
+      margin: 0 0 14px;
+      padding: 10px 12px;
+      border: 1px solid #f3d19c;
+      border-radius: 6px;
+      background: #fff8eb;
+      color: #8a4b0f;
+      font-weight: 800;
+    }
+
+    .sync-status.show {
+      display: block;
+    }
+
     .field {
       display: grid;
       gap: 7px;
@@ -359,6 +374,7 @@
     <section class="grid">
       <form class="panel" id="entryForm">
         <h2>축의금 수금 입력</h2>
+        <div class="sync-status" id="syncStatus"></div>
 
         <div class="field inline-field">
           <label for="envelope">봉투번호</label>
@@ -467,7 +483,11 @@
 
   <script>
     const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwevY9GEnjZBdkMNK2FfPi2HqTF34sIZcf8r6mnMu7-dEB1HfpmRXjOAz0H5mffdnxK/exec";
+    const PENDING_STORAGE_KEY = "weddingContributionPendingEntries";
     const entries = [];
+    let pendingEntries = loadPendingEntries();
+    let isSyncingPending = false;
+    const syncingEntryIds = new Set();
     let selectedAmount = 50000;
     let extraTickets = 0;
 
@@ -485,6 +505,54 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+
+    function createLocalId() {
+      return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function loadPendingEntries() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(PENDING_STORAGE_KEY) || "[]");
+        return Array.isArray(saved) ? saved : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function savePendingEntries() {
+      localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pendingEntries));
+      renderSyncStatus();
+    }
+
+    function renderSyncStatus() {
+      const status = document.getElementById("syncStatus");
+      if (!status) return;
+
+      if (!pendingEntries.length) {
+        status.classList.remove("show");
+        status.textContent = "";
+        return;
+      }
+
+      status.classList.add("show");
+      status.textContent = `미동기화 ${pendingEntries.length}건 - 인터넷 연결 시 자동 재시도됩니다.`;
+    }
+
+    function queuePendingEntry(entry) {
+      if (!entry.localId) {
+        entry.localId = createLocalId();
+      }
+
+      if (!pendingEntries.some((item) => item.localId === entry.localId)) {
+        pendingEntries.push(entry);
+        savePendingEntries();
+      }
+    }
+
+    function removePendingEntry(localId) {
+      pendingEntries = pendingEntries.filter((entry) => entry.localId !== localId);
+      savePendingEntries();
+    }
 
     function showToast(message) {
       const toast = document.getElementById("toast");
@@ -509,7 +577,7 @@
           <td>${escapeHtml(entry.name)}</td>
           <td class="amount-cell">${formatter.format(entry.amount)}</td>
           <td>${entry.tickets}</td>
-          <td>${escapeHtml(entry.note)}</td>
+          <td>${entry.pending ? `${escapeHtml(entry.note)} 미동기화` : escapeHtml(entry.note)}</td>
           <td><button class="delete-button" type="button" data-entry-index="${entry.index}">삭제</button></td>
         </tr>
       `).join("");
@@ -533,12 +601,16 @@
         amount: numberOnly(entry.amount),
         tickets: numberOnly(entry.tickets),
         note: textValue(entry.note),
-        rowNumber: numberOnly(entry.rowNumber)
+        rowNumber: numberOnly(entry.rowNumber),
+        localId: textValue(entry.localId),
+        pending: Boolean(entry.pending)
       };
     }
 
     function replaceEntries(rows) {
-      entries.splice(0, entries.length, ...rows.map(normalizeEntry));
+      const syncedEntries = rows.map(normalizeEntry);
+      const localPendingEntries = pendingEntries.map((entry) => normalizeEntry({ ...entry, pending: true }));
+      entries.splice(0, entries.length, ...syncedEntries, ...localPendingEntries);
       render();
     }
 
@@ -569,6 +641,32 @@
       });
 
       return true;
+    }
+
+    async function syncPendingEntries() {
+      if (isSyncingPending || !GOOGLE_SCRIPT_URL || !pendingEntries.length) {
+        renderSyncStatus();
+        return;
+      }
+
+      isSyncingPending = true;
+
+      try {
+        for (const entry of [...pendingEntries]) {
+          if (syncingEntryIds.has(entry.localId)) continue;
+          syncingEntryIds.add(entry.localId);
+          await saveEntryToSheet(entry);
+          removePendingEntry(entry.localId);
+          syncingEntryIds.delete(entry.localId);
+        }
+
+        await loadEntriesFromSheet();
+      } catch (error) {
+        renderSyncStatus();
+      } finally {
+        syncingEntryIds.clear();
+        isSyncingPending = false;
+      }
     }
 
     async function deleteEntryFromSheet(entry) {
@@ -654,7 +752,6 @@
 
       const envelopeInput = document.getElementById("envelope");
       const nameInput = document.getElementById("guestName");
-      const saveButton = document.querySelector(".save-button");
       const customAmount = numberOnly(document.getElementById("customAmount").value);
       const amount = customAmount || selectedAmount;
 
@@ -664,32 +761,38 @@
       }
 
       const entry = {
+        localId: createLocalId(),
         envelope: envelopeInput.value.trim(),
         name: nameInput.value.trim(),
         amount,
         tickets: numberOnly(document.getElementById("mealTickets").value),
-        note: document.getElementById("note").value.trim()
+        note: document.getElementById("note").value.trim(),
+        pending: true
       };
 
-      saveButton.disabled = true;
-      saveButton.textContent = "저장 중";
+      entries.push(entry);
+      queuePendingEntry(entry);
+      render();
+      resetForm();
+      showToast("저장되었습니다.");
 
-      try {
-        const synced = await saveEntryToSheet(entry);
-        if (synced) {
-          await loadEntriesFromSheet();
-        } else {
-          entries.push(entry);
-          render();
-        }
-        resetForm();
-        showToast(synced ? "시트에 저장되었습니다." : "저장되었습니다.");
-      } catch (error) {
-        showToast("시트 저장에 실패했습니다.");
-      } finally {
-        saveButton.disabled = false;
-        saveButton.textContent = "저장하기";
-      }
+      syncingEntryIds.add(entry.localId);
+
+      saveEntryToSheet(entry)
+        .then((synced) => {
+          if (synced) {
+            removePendingEntry(entry.localId);
+            entry.pending = false;
+            render();
+            loadEntriesFromSheet().catch(() => {});
+          }
+        })
+        .catch(() => {
+          showToast("시트 저장에 실패했습니다.");
+        })
+        .finally(() => {
+          syncingEntryIds.delete(entry.localId);
+        });
     });
 
     document.getElementById("search").addEventListener("input", render);
@@ -702,7 +805,13 @@
       if (!entry) return;
 
       if (!entry.rowNumber) {
-        showToast("시트 동기화 후 삭제할 수 있습니다.");
+        const confirmed = window.confirm(`${entry.envelope} / ${entry.name} 미동기화 내역을 삭제할까요?`);
+        if (!confirmed) return;
+
+        removePendingEntry(entry.localId);
+        entries.splice(Number(button.dataset.entryIndex), 1);
+        render();
+        showToast("삭제되었습니다.");
         return;
       }
 
@@ -735,9 +844,13 @@
     });
 
     render();
+    renderSyncStatus();
     loadEntriesFromSheet().catch(() => {
       showToast("시트 내용을 불러오지 못했습니다.");
     });
+    syncPendingEntries();
+    window.addEventListener("online", syncPendingEntries);
+    window.setInterval(syncPendingEntries, 15000);
   </script>
 </body>
 </html>
